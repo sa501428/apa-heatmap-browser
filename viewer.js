@@ -92,7 +92,7 @@ class HeatmapViewer {
     }
 
     addTag(stem) {
-        if (!stem || this.selectedStems.includes(stem) || !this.stemList.includes(stem) || this.selectedStems.length >= this.maxTags) return;
+        if (!stem || this.selectedStems.includes(stem) || !this.stemList.includes(stem)) return;
         this.selectedStems.push(stem);
         this.renderTags();
         this.stemTagInput.value = '';
