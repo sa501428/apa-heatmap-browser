@@ -12,8 +12,10 @@ class HeatmapViewer {
         this.selectedStems = [];
         this.suggestions = [];
         this.activeSuggestion = -1;
-        this.maxTags = 10;
+        this.maxTags = 4;
         this.renderToken = 0;
+        this.matrixCache = {};
+        this.currentBinUrl = '';
         this.initializeUI();
     }
 
@@ -36,6 +38,11 @@ class HeatmapViewer {
 
     async loadData() {
         try {
+            // Clear cache if file changes
+            if (this.currentBinUrl !== this.binUrlInput.value) {
+                this.matrixCache = {};
+                this.currentBinUrl = this.binUrlInput.value;
+            }
             await this.loadHeader();
             this.stemList = Object.keys(this.keymap);
             this.selectedStems = [];
@@ -221,6 +228,11 @@ class HeatmapViewer {
     }
 
     async fetchMatrix(i, j) {
+        // Use cache key based on file URL and indices
+        const cacheKey = `${this.currentBinUrl}|${i},${j}`;
+        if (this.matrixCache[cacheKey]) {
+            return this.matrixCache[cacheKey];
+        }
         const matrixBytes = this.matrixSize * this.matrixSize * FLOAT_SIZE;
         const offset = this.dataOffset + (i * this.N + j) * matrixBytes;
         const resp = await fetch(this.binUrlInput.value, {
@@ -232,6 +244,7 @@ class HeatmapViewer {
         for (let r = 0; r < this.matrixSize; r++) {
             matrix.push(floatArray.slice(r * this.matrixSize, (r + 1) * this.matrixSize));
         }
+        this.matrixCache[cacheKey] = matrix;
         return matrix;
     }
 
