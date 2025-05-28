@@ -13,6 +13,7 @@ class HeatmapViewer {
         this.suggestions = [];
         this.activeSuggestion = -1;
         this.maxTags = 10;
+        this.renderToken = 0;
         this.initializeUI();
     }
 
@@ -258,8 +259,19 @@ class HeatmapViewer {
     }
 
     async renderHeatmaps() {
+        const myToken = ++this.renderToken;
         if (this.app) {
-            this.app.destroy(true);
+            try {
+                // Defensive: remove resize plugin if it exists and has no cancelResize
+                const resizePlugin = this.app.renderer?.plugins?.resize;
+                if (resizePlugin && typeof resizePlugin.cancelResize !== 'function') {
+                    delete this.app.renderer.plugins.resize;
+                }
+                this.app.destroy(true, { children: true, texture: true, baseTexture: true });
+            } catch (e) {
+                // Swallow known PixiJS destroy errors
+                console.warn('PixiJS destroy error:', e);
+            }
         }
         const stems = this.selectedStems;
         if (!stems.length) {
@@ -271,15 +283,18 @@ class HeatmapViewer {
         const scores = [];
         for (let i = 0; i < stems.length; i++) {
             for (let j = 0; j < stems.length; j++) {
+                if (myToken !== this.renderToken) return;
                 const matrix = await this.fetchMatrix(
                     this.keymap[stems[i]], 
                     this.keymap[stems[j]]
                 );
+                if (myToken !== this.renderToken) return;
                 matrices.push(matrix);
                 labels.push(`${stems[i]} - ${stems[j]}`);
                 scores.push(this.getScore(matrix).toFixed(2));
             }
         }
+        if (myToken !== this.renderToken) return;
         const gridSize = Math.ceil(Math.sqrt(matrices.length));
         const cellSize = 40;
         const margin = 4;
@@ -292,8 +307,6 @@ class HeatmapViewer {
         this.canvasContainer.innerHTML = '';
         this.canvasContainer.appendChild(this.app.view);
         const colorMaps = matrices.map(mat => this.getColorLimit(mat));
-
-        // Tooltip div
         let tooltip = document.getElementById('heatmap-tooltip');
         if (!tooltip) {
             tooltip = document.createElement('div');
@@ -309,8 +322,8 @@ class HeatmapViewer {
             tooltip.style.display = 'none';
             document.body.appendChild(tooltip);
         }
-
         matrices.forEach((mat, idx) => {
+            if (myToken !== this.renderToken) return;
             const lim = colorMaps[idx];
             const tex = this.matrixToTexture(mat, lim);
             const sprite = new PIXI.Sprite(tex);
@@ -321,8 +334,6 @@ class HeatmapViewer {
             sprite.width = cellSize;
             sprite.height = cellSize;
             this.app.stage.addChild(sprite);
-
-            // Add hover event for tooltip
             sprite.interactive = true;
             sprite.on('pointerover', (event) => {
                 tooltip.innerHTML = `<b>${labels[idx]}</b><br>APA score: <b>${scores[idx]}</b>`;
