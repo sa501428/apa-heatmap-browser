@@ -184,18 +184,35 @@ class HeatmapViewer {
         return 3 * cornerMean;
     }
 
-    getScore(matrix) {
+    getScore(matrix, res = 100) {
         const r = matrix.length;
+        if (r === 0) return 0;
+        const center_peak_width = (res === 10) ? 5 : 2;
         const buffer = Math.floor(r / 4);
         const rc = Math.floor(r / 2);
-        const cpw = 2; // res = 100
-        const center = this.mean(
-            matrix.slice(rc - cpw, rc + cpw + 1).flat()
-        );
-        const corner = this.mean(
-            matrix.slice(-buffer).map(row => this.mean(row.slice(0, buffer)))
-        );
-        return corner !== 0 ? center / corner : 0;
+
+        // Center region: matrix[rc - cpw : rc + cpw + 1, rc - cpw : rc + cpw + 1]
+        const start = Math.max(0, rc - center_peak_width);
+        const end = Math.min(r, rc + center_peak_width + 1);
+        let centerVals = [];
+        for (let i = start; i < end; i++) {
+            for (let j = start; j < end; j++) {
+                centerVals.push(matrix[i][j]);
+            }
+        }
+        const center = this.mean(centerVals);
+
+        // Lower-left region: matrix[-buffer:, :buffer]
+        let llVals = [];
+        for (let i = r - buffer; i < r; i++) {
+            for (let j = 0; j < buffer; j++) {
+                if (i >= 0 && j < r) llVals.push(matrix[i][j]);
+            }
+        }
+        const ll = this.mean(llVals);
+
+        if (!isFinite(center) || !isFinite(ll) || ll === 0) return 0;
+        return center / ll;
     }
 
     mean(arr) {
@@ -251,6 +268,7 @@ class HeatmapViewer {
         }
         const matrices = [];
         const labels = [];
+        const scores = [];
         for (let i = 0; i < stems.length; i++) {
             for (let j = 0; j < stems.length; j++) {
                 const matrix = await this.fetchMatrix(
@@ -258,7 +276,8 @@ class HeatmapViewer {
                     this.keymap[stems[j]]
                 );
                 matrices.push(matrix);
-                labels.push(`${stems[i]}-${stems[j]}`);
+                labels.push(`${stems[i]} - ${stems[j]}`);
+                scores.push(this.getScore(matrix).toFixed(2));
             }
         }
         const gridSize = Math.ceil(Math.sqrt(matrices.length));
@@ -273,6 +292,24 @@ class HeatmapViewer {
         this.canvasContainer.innerHTML = '';
         this.canvasContainer.appendChild(this.app.view);
         const colorMaps = matrices.map(mat => this.getColorLimit(mat));
+
+        // Tooltip div
+        let tooltip = document.getElementById('heatmap-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.id = 'heatmap-tooltip';
+            tooltip.style.position = 'fixed';
+            tooltip.style.pointerEvents = 'none';
+            tooltip.style.background = 'rgba(30,40,80,0.95)';
+            tooltip.style.color = '#fff';
+            tooltip.style.padding = '6px 12px';
+            tooltip.style.borderRadius = '6px';
+            tooltip.style.fontSize = '13px';
+            tooltip.style.zIndex = 1000;
+            tooltip.style.display = 'none';
+            document.body.appendChild(tooltip);
+        }
+
         matrices.forEach((mat, idx) => {
             const lim = colorMaps[idx];
             const tex = this.matrixToTexture(mat, lim);
@@ -284,14 +321,21 @@ class HeatmapViewer {
             sprite.width = cellSize;
             sprite.height = cellSize;
             this.app.stage.addChild(sprite);
-            // Add label
-            const label = new PIXI.Text(labels[idx], {
-                fontSize: 8,
-                fill: 0x000000
+
+            // Add hover event for tooltip
+            sprite.interactive = true;
+            sprite.on('pointerover', (event) => {
+                tooltip.innerHTML = `<b>${labels[idx]}</b><br>APA score: <b>${scores[idx]}</b>`;
+                tooltip.style.display = 'block';
             });
-            label.x = sprite.x;
-            label.y = sprite.y - 12;
-            this.app.stage.addChild(label);
+            sprite.on('pointermove', (event) => {
+                const mouse = event.data.global;
+                tooltip.style.left = (window.scrollX + this.canvasContainer.getBoundingClientRect().left + mouse.x + 10) + 'px';
+                tooltip.style.top = (window.scrollY + this.canvasContainer.getBoundingClientRect().top + mouse.y + 10) + 'px';
+            });
+            sprite.on('pointerout', () => {
+                tooltip.style.display = 'none';
+            });
         });
     }
 }
