@@ -195,7 +195,7 @@ class HeatmapViewer {
     getScore(matrix, res = 100) {
         const r = matrix.length;
         if (r === 0) return 0;
-        const center_peak_width = (res === 10) ? 5 : 2;
+        const center_peak_width = (res === 10) ? 5 : 1;
         const buffer = Math.floor(r / 4);
         const rc = Math.floor(r / 2);
 
@@ -354,8 +354,9 @@ class HeatmapViewer {
             });
             sprite.on('pointermove', (event) => {
                 const mouse = event.data.global;
-                tooltip.style.left = (window.scrollX + this.canvasContainer.getBoundingClientRect().left + mouse.x + 10) + 'px';
-                tooltip.style.top = (window.scrollY + this.canvasContainer.getBoundingClientRect().top + mouse.y + 10) + 'px';
+                const rect = this.canvasContainer.getBoundingClientRect();
+                tooltip.style.left = (rect.left + mouse.x + 2) + 'px';
+                tooltip.style.top = (rect.top + mouse.y + 2) + 'px';
             });
             sprite.on('pointerout', () => {
                 tooltip.style.display = 'none';
