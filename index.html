@@ -12,7 +12,11 @@
             <input type="text" id="binUrl" placeholder="Enter binary file URL" value="https://your-wasabi-endpoint/hic_data_intra.short.bin">
             <button id="loadBtn">Load Data</button>
             <div class="selection-controls">
-                <select id="stemSelect" multiple size="10"></select>
+                <div id="stemTagInputContainer">
+                    <div id="stemTags"></div>
+                    <input type="text" id="stemTagInput" placeholder="Type to add STEMs..." autocomplete="off" />
+                    <div id="stemAutocomplete" class="autocomplete-list"></div>
+                </div>
                 <button id="randomBtn">Select Random</button>
             </div>
         </div>

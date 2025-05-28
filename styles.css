@@ -60,4 +60,71 @@ button:hover {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     padding: 10px;
     min-height: 500px;
+}
+
+#stemTagInputContainer {
+    display: flex;
+    flex-direction: column;
+    width: 300px;
+    position: relative;
+}
+
+#stemTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.stem-tag {
+    background: #e0e7ff;
+    color: #1e40af;
+    border-radius: 16px;
+    padding: 4px 10px 4px 8px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    cursor: default;
+}
+
+.stem-tag .remove-tag {
+    margin-left: 6px;
+    color: #888;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+#stemTagInput {
+    border: none;
+    outline: none;
+    font-size: 15px;
+    padding: 6px;
+    min-width: 80px;
+    flex: 1;
+    border-radius: 4px;
+}
+
+.autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-top: none;
+    z-index: 10;
+    max-height: 150px;
+    overflow-y: auto;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.autocomplete-item {
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+.autocomplete-item:hover, .autocomplete-item.active {
+    background: #e0e7ff;
+    color: #1e40af;
 } 

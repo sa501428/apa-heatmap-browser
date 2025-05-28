@@ -8,27 +8,39 @@ class HeatmapViewer {
         this.N = 0;
         this.dataOffset = 0;
         this.app = null;
-        this.selectedStems = new Set();
-        
+        this.stemList = [];
+        this.selectedStems = [];
+        this.suggestions = [];
+        this.activeSuggestion = -1;
+        this.maxTags = 10;
         this.initializeUI();
     }
 
     initializeUI() {
         this.binUrlInput = document.getElementById('binUrl');
         this.loadBtn = document.getElementById('loadBtn');
-        this.stemSelect = document.getElementById('stemSelect');
         this.randomBtn = document.getElementById('randomBtn');
         this.canvasContainer = document.getElementById('canvasContainer');
+        this.stemTagInput = document.getElementById('stemTagInput');
+        this.stemTags = document.getElementById('stemTags');
+        this.stemAutocomplete = document.getElementById('stemAutocomplete');
 
         this.loadBtn.addEventListener('click', () => this.loadData());
         this.randomBtn.addEventListener('click', () => this.selectRandomStems());
-        this.stemSelect.addEventListener('change', () => this.updateSelectedStems());
+        this.stemTagInput.addEventListener('input', (e) => this.onInput(e));
+        this.stemTagInput.addEventListener('keydown', (e) => this.onKeyDown(e));
+        this.stemAutocomplete.addEventListener('mousedown', (e) => this.onAutocompleteClick(e));
+        this.stemTagInput.addEventListener('blur', () => setTimeout(() => this.hideAutocomplete(), 100));
     }
 
     async loadData() {
         try {
             await this.loadHeader();
-            this.populateStemSelect();
+            this.stemList = Object.keys(this.keymap);
+            this.selectedStems = [];
+            this.renderTags();
+            this.stemTagInput.value = '';
+            this.stemTagInput.disabled = false;
             this.selectRandomStems();
         } catch (error) {
             console.error('Error loading data:', error);
@@ -42,11 +54,9 @@ class HeatmapViewer {
         });
         const headerBuf = await headerResp.arrayBuffer();
         const view = new DataView(headerBuf);
-        
         const keymapLen = view.getUint32(0, true);
         this.matrixSize = view.getUint32(4, true);
         const dtype = view.getUint32(8, true);
-
         const keymapResp = await fetch(this.binUrlInput.value, {
             headers: { Range: `bytes=12-${11 + keymapLen}` }
         });
@@ -56,40 +66,115 @@ class HeatmapViewer {
         this.dataOffset = HEADER_BYTES + keymapLen;
     }
 
-    populateStemSelect() {
-        this.stemSelect.innerHTML = '';
-        Object.keys(this.keymap).forEach(stem => {
-            const option = document.createElement('option');
-            option.value = stem;
-            option.textContent = stem;
-            this.stemSelect.appendChild(option);
+    // --- Tag Input Logic ---
+    renderTags() {
+        this.stemTags.innerHTML = '';
+        this.selectedStems.forEach(stem => {
+            const tag = document.createElement('span');
+            tag.className = 'stem-tag';
+            tag.textContent = stem;
+            const removeBtn = document.createElement('span');
+            removeBtn.className = 'remove-tag';
+            removeBtn.textContent = '×';
+            removeBtn.addEventListener('click', () => this.removeTag(stem));
+            tag.appendChild(removeBtn);
+            this.stemTags.appendChild(tag);
         });
-    }
-
-    selectRandomStems() {
-        const stems = Object.keys(this.keymap);
-        const numToSelect = Math.min(10, stems.length);
-        const selected = new Set();
-        
-        while (selected.size < numToSelect) {
-            const randomIndex = Math.floor(Math.random() * stems.length);
-            selected.add(stems[randomIndex]);
-        }
-
-        Array.from(this.stemSelect.options).forEach(option => {
-            option.selected = selected.has(option.value);
-        });
-        
-        this.updateSelectedStems();
-    }
-
-    updateSelectedStems() {
-        this.selectedStems = new Set(
-            Array.from(this.stemSelect.selectedOptions).map(option => option.value)
-        );
         this.renderHeatmaps();
     }
 
+    addTag(stem) {
+        if (!stem || this.selectedStems.includes(stem) || !this.stemList.includes(stem) || this.selectedStems.length >= this.maxTags) return;
+        this.selectedStems.push(stem);
+        this.renderTags();
+        this.stemTagInput.value = '';
+        this.hideAutocomplete();
+    }
+
+    removeTag(stem) {
+        this.selectedStems = this.selectedStems.filter(s => s !== stem);
+        this.renderTags();
+    }
+
+    onInput(e) {
+        const value = e.target.value.trim();
+        if (!value) {
+            this.hideAutocomplete();
+            return;
+        }
+        this.suggestions = this.stemList.filter(stem =>
+            stem.toLowerCase().includes(value.toLowerCase()) &&
+            !this.selectedStems.includes(stem)
+        ).slice(0, 10);
+        this.activeSuggestion = -1;
+        this.showAutocomplete();
+    }
+
+    onKeyDown(e) {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            if (this.suggestions.length > 0 && this.activeSuggestion >= 0) {
+                this.addTag(this.suggestions[this.activeSuggestion]);
+            } else {
+                this.addTag(this.stemTagInput.value.trim());
+            }
+        } else if (e.key === 'ArrowDown') {
+            if (this.suggestions.length > 0) {
+                this.activeSuggestion = (this.activeSuggestion + 1) % this.suggestions.length;
+                this.showAutocomplete();
+            }
+        } else if (e.key === 'ArrowUp') {
+            if (this.suggestions.length > 0) {
+                this.activeSuggestion = (this.activeSuggestion - 1 + this.suggestions.length) % this.suggestions.length;
+                this.showAutocomplete();
+            }
+        } else if (e.key === 'Backspace' && this.stemTagInput.value === '') {
+            this.selectedStems.pop();
+            this.renderTags();
+        }
+    }
+
+    showAutocomplete() {
+        this.stemAutocomplete.innerHTML = '';
+        if (this.suggestions.length === 0) {
+            this.stemAutocomplete.style.display = 'none';
+            return;
+        }
+        this.suggestions.forEach((stem, idx) => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item' + (idx === this.activeSuggestion ? ' active' : '');
+            item.textContent = stem;
+            item.dataset.stem = stem;
+            this.stemAutocomplete.appendChild(item);
+        });
+        this.stemAutocomplete.style.display = 'block';
+    }
+
+    hideAutocomplete() {
+        this.stemAutocomplete.style.display = 'none';
+    }
+
+    onAutocompleteClick(e) {
+        if (e.target.classList.contains('autocomplete-item')) {
+            this.addTag(e.target.dataset.stem);
+        }
+    }
+
+    selectRandomStems() {
+        if (!this.stemList.length) return;
+        const stems = [...this.stemList];
+        const selected = [];
+        while (selected.length < Math.min(this.maxTags, stems.length)) {
+            const idx = Math.floor(Math.random() * stems.length);
+            selected.push(stems.splice(idx, 1)[0]);
+        }
+        this.selectedStems = selected;
+        this.renderTags();
+        this.stemTagInput.value = '';
+        this.hideAutocomplete();
+    }
+
+    // --- Heatmap Logic ---
     getColorLimit(matrix) {
         const r = matrix.length;
         const buffer = Math.floor(r / 4);
@@ -114,7 +199,7 @@ class HeatmapViewer {
     }
 
     mean(arr) {
-        return arr.reduce((a, b) => a + b, 0) / arr.length;
+        return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
     }
 
     async fetchMatrix(i, j) {
@@ -125,7 +210,6 @@ class HeatmapViewer {
         });
         const buffer = await resp.arrayBuffer();
         const floatArray = new Float32Array(buffer);
-
         const matrix = [];
         for (let r = 0; r < this.matrixSize; r++) {
             matrix.push(floatArray.slice(r * this.matrixSize, (r + 1) * this.matrixSize));
@@ -139,10 +223,7 @@ class HeatmapViewer {
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d');
-
-        // Avoid division by zero: if colorLimit is 0, set to 1
         const safeColorLimit = colorLimit === 0 ? 1 : colorLimit;
-
         const imgData = ctx.createImageData(size, size);
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
@@ -163,11 +244,13 @@ class HeatmapViewer {
         if (this.app) {
             this.app.destroy(true);
         }
-
-        const stems = Array.from(this.selectedStems);
+        const stems = this.selectedStems;
+        if (!stems.length) {
+            this.canvasContainer.innerHTML = '<div style="color:#888;padding:20px;">No STEMs selected.</div>';
+            return;
+        }
         const matrices = [];
         const labels = [];
-
         for (let i = 0; i < stems.length; i++) {
             for (let j = 0; j < stems.length; j++) {
                 const matrix = await this.fetchMatrix(
@@ -178,12 +261,10 @@ class HeatmapViewer {
                 labels.push(`${stems[i]}-${stems[j]}`);
             }
         }
-
         const gridSize = Math.ceil(Math.sqrt(matrices.length));
         const cellSize = 40;
         const margin = 4;
         const totalSize = gridSize * (cellSize + margin);
-
         this.app = new PIXI.Application({ 
             width: totalSize, 
             height: totalSize, 
@@ -191,9 +272,7 @@ class HeatmapViewer {
         });
         this.canvasContainer.innerHTML = '';
         this.canvasContainer.appendChild(this.app.view);
-
         const colorMaps = matrices.map(mat => this.getColorLimit(mat));
-
         matrices.forEach((mat, idx) => {
             const lim = colorMaps[idx];
             const tex = this.matrixToTexture(mat, lim);
@@ -205,7 +284,6 @@ class HeatmapViewer {
             sprite.width = cellSize;
             sprite.height = cellSize;
             this.app.stage.addChild(sprite);
-
             // Add label
             const label = new PIXI.Text(labels[idx], {
                 fontSize: 8,
