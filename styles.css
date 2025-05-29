@@ -127,4 +127,70 @@ button:hover {
 .autocomplete-item:hover, .autocomplete-item.active {
     background: #e0e7ff;
     color: #1e40af;
+}
+
+.predefined-urls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.predefined-url-btn {
+    padding: 8px 16px;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.predefined-url-btn:hover {
+    background-color: #357abd;
+}
+
+.dataset-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.dataset-tab {
+    padding: 8px 16px;
+    background-color: #e0e7ff;
+    color: #1e40af;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.dataset-tab:hover {
+    background-color: #c7d2fe;
+}
+
+.dataset-tab.active {
+    background-color: #1e40af;
+    color: white;
+}
+
+.loading-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+    background: white;
+    border-radius: 8px;
+}
+
+.loading-text {
+    color: #666;
+    font-size: 16px;
+}
+
+.error-text {
+    color: #dc2626;
+    font-size: 16px;
 } 

@@ -1,8 +1,16 @@
 const HEADER_BYTES = 12;
 const FLOAT_SIZE = 4;
 
+const PREDEFINED_URLS = {
+    'Short Range': 'https://s3.us-central-1.wasabisys.com/aiden-encode-hic-mirror/apa-heatmaps/v27-1/hic_data_intra.short.bin',
+    'Long Range': 'https://s3.us-central-1.wasabisys.com/aiden-encode-hic-mirror/apa-heatmaps/v27-1/hic_data_intra.long.bin',
+    'Inter-chromosomal': 'https://s3.us-central-1.wasabisys.com/aiden-encode-hic-mirror/apa-heatmaps/v27-1/hic_data_inter.bin'
+};
+
 class HeatmapViewer {
     constructor() {
+        this.datasets = {};
+        this.activeDataset = null;
         this.keymap = {};
         this.matrixSize = 0;
         this.N = 0;
@@ -15,8 +23,8 @@ class HeatmapViewer {
         this.maxTags = 4;
         this.renderToken = 0;
         this.matrixCache = {};
-        this.currentBinUrl = '';
         this.initializeUI();
+        this.loadAllDatasets();
     }
 
     initializeUI() {
@@ -28,7 +36,23 @@ class HeatmapViewer {
         this.stemTags = document.getElementById('stemTags');
         this.stemAutocomplete = document.getElementById('stemAutocomplete');
 
-        this.loadBtn.addEventListener('click', () => this.loadData());
+        // Create dataset tabs
+        const tabContainer = document.createElement('div');
+        tabContainer.className = 'dataset-tabs';
+        Object.keys(PREDEFINED_URLS).forEach(label => {
+            const tab = document.createElement('button');
+            tab.textContent = label;
+            tab.className = 'dataset-tab';
+            tab.dataset.dataset = label;
+            tab.addEventListener('click', () => this.switchDataset(label));
+            tabContainer.appendChild(tab);
+        });
+        this.binUrlInput.parentNode.insertBefore(tabContainer, this.binUrlInput);
+
+        // Hide the URL input and load button since we're using tabs
+        this.binUrlInput.style.display = 'none';
+        this.loadBtn.style.display = 'none';
+
         this.randomBtn.addEventListener('click', () => this.selectRandomStems());
         this.stemTagInput.addEventListener('input', (e) => this.onInput(e));
         this.stemTagInput.addEventListener('keydown', (e) => this.onKeyDown(e));
@@ -36,42 +60,95 @@ class HeatmapViewer {
         this.stemTagInput.addEventListener('blur', () => setTimeout(() => this.hideAutocomplete(), 100));
     }
 
-    async loadData() {
+    async loadAllDatasets() {
+        const loadingContainer = document.createElement('div');
+        loadingContainer.className = 'loading-container';
+        loadingContainer.innerHTML = '<div class="loading-text">Loading datasets...</div>';
+        this.canvasContainer.appendChild(loadingContainer);
+
         try {
-            // Clear cache if file changes
-            if (this.currentBinUrl !== this.binUrlInput.value) {
-                this.matrixCache = {};
-                this.currentBinUrl = this.binUrlInput.value;
+            for (const [label, url] of Object.entries(PREDEFINED_URLS)) {
+                const dataset = {
+                    url,
+                    keymap: {},
+                    matrixSize: 0,
+                    N: 0,
+                    dataOffset: 0,
+                    matrixCache: {}
+                };
+
+                // Load header
+                const headerResp = await fetch(url, { headers: { Range: 'bytes=0-11' } });
+                const headerBuf = await headerResp.arrayBuffer();
+                const view = new DataView(headerBuf);
+                const keymapLen = view.getUint32(0, true);
+                dataset.matrixSize = view.getUint32(4, true);
+                const dtype = view.getUint32(8, true);
+
+                // Load keymap
+                const keymapResp = await fetch(url, {
+                    headers: { Range: `bytes=12-${11 + keymapLen}` }
+                });
+                const keymapText = await keymapResp.text();
+                dataset.keymap = JSON.parse(keymapText);
+                dataset.N = Object.keys(dataset.keymap).length;
+                dataset.dataOffset = HEADER_BYTES + keymapLen;
+
+                this.datasets[label] = dataset;
             }
-            await this.loadHeader();
-            this.stemList = Object.keys(this.keymap);
-            this.selectedStems = [];
-            this.renderTags();
-            this.stemTagInput.value = '';
+
+            // Set initial dataset and stem list
+            const firstDataset = Object.keys(PREDEFINED_URLS)[0];
+            this.switchDataset(firstDataset);
+            this.stemList = Object.keys(this.datasets[firstDataset].keymap);
             this.stemTagInput.disabled = false;
             this.selectRandomStems();
         } catch (error) {
-            console.error('Error loading data:', error);
-            alert('Error loading data. Please check the URL and try again.');
+            console.error('Error loading datasets:', error);
+            loadingContainer.innerHTML = '<div class="error-text">Error loading datasets. Please refresh the page.</div>';
         }
     }
 
-    async loadHeader() {
-        const headerResp = await fetch(this.binUrlInput.value, { 
-            headers: { Range: 'bytes=0-11' } 
+    switchDataset(label) {
+        if (!this.datasets[label]) return;
+        
+        // Update active dataset
+        this.activeDataset = label;
+        const dataset = this.datasets[label];
+        this.keymap = dataset.keymap;
+        this.matrixSize = dataset.matrixSize;
+        this.N = dataset.N;
+        this.dataOffset = dataset.dataOffset;
+        this.matrixCache = dataset.matrixCache;
+
+        // Update UI
+        document.querySelectorAll('.dataset-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.dataset === label);
         });
-        const headerBuf = await headerResp.arrayBuffer();
-        const view = new DataView(headerBuf);
-        const keymapLen = view.getUint32(0, true);
-        this.matrixSize = view.getUint32(4, true);
-        const dtype = view.getUint32(8, true);
-        const keymapResp = await fetch(this.binUrlInput.value, {
-            headers: { Range: `bytes=12-${11 + keymapLen}` }
+
+        // Re-render heatmaps with current stems
+        this.renderHeatmaps();
+    }
+
+    async fetchMatrix(i, j) {
+        const dataset = this.datasets[this.activeDataset];
+        const cacheKey = `${dataset.url}|${i},${j}`;
+        if (dataset.matrixCache[cacheKey]) {
+            return dataset.matrixCache[cacheKey];
+        }
+        const matrixBytes = dataset.matrixSize * dataset.matrixSize * FLOAT_SIZE;
+        const offset = dataset.dataOffset + (i * dataset.N + j) * matrixBytes;
+        const resp = await fetch(dataset.url, {
+            headers: { Range: `bytes=${offset}-${offset + matrixBytes - 1}` }
         });
-        const keymapText = await keymapResp.text();
-        this.keymap = JSON.parse(keymapText);
-        this.N = Object.keys(this.keymap).length;
-        this.dataOffset = HEADER_BYTES + keymapLen;
+        const buffer = await resp.arrayBuffer();
+        const floatArray = new Float32Array(buffer);
+        const matrix = [];
+        for (let r = 0; r < dataset.matrixSize; r++) {
+            matrix.push(floatArray.slice(r * dataset.matrixSize, (r + 1) * dataset.matrixSize));
+        }
+        dataset.matrixCache[cacheKey] = matrix;
+        return matrix;
     }
 
     // --- Tag Input Logic ---
@@ -220,32 +297,11 @@ class HeatmapViewer {
         const ll = this.mean(llVals);
 
         if (!isFinite(center) || !isFinite(ll) || ll === 0) return 0;
-        return center / ll;
+        return (center + 1) / (ll + 1);
     }
 
     mean(arr) {
         return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-    }
-
-    async fetchMatrix(i, j) {
-        // Use cache key based on file URL and indices
-        const cacheKey = `${this.currentBinUrl}|${i},${j}`;
-        if (this.matrixCache[cacheKey]) {
-            return this.matrixCache[cacheKey];
-        }
-        const matrixBytes = this.matrixSize * this.matrixSize * FLOAT_SIZE;
-        const offset = this.dataOffset + (i * this.N + j) * matrixBytes;
-        const resp = await fetch(this.binUrlInput.value, {
-            headers: { Range: `bytes=${offset}-${offset + matrixBytes - 1}` }
-        });
-        const buffer = await resp.arrayBuffer();
-        const floatArray = new Float32Array(buffer);
-        const matrix = [];
-        for (let r = 0; r < this.matrixSize; r++) {
-            matrix.push(floatArray.slice(r * this.matrixSize, (r + 1) * this.matrixSize));
-        }
-        this.matrixCache[cacheKey] = matrix;
-        return matrix;
     }
 
     matrixToTexture(matrix, colorLimit) {
